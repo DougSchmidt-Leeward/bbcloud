@@ -282,12 +282,62 @@ async fn create_json_reports_ids_and_urls() {
         ])
         .output()
         .unwrap();
+    assert!(out.status.success());
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(value[0]["id"], 17);
+    assert!(value[0].get("draft").is_none());
     assert!(value[0]["url"]
         .as_str()
         .unwrap()
         .contains("pull-requests/17"));
+}
+
+#[tokio::test]
+async fn create_json_includes_draft_only_when_returned_true_for_every_target() {
+    for draft in [false, true] {
+        let server = MockServer::start().await;
+        let url = "https://bitbucket.org/acme/widgets/pull-requests/26";
+        Mock::given(method("POST"))
+            .and(path("/repositories/acme/widgets/pullrequests"))
+            .and(body_partial_json(serde_json::json!({ "draft": true })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": 26,
+                "draft": draft,
+                "links": { "html": { "href": url } }
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+
+        let out = bb(&server)
+            .args([
+                "pr",
+                "create",
+                "main,release/1",
+                "feature/a",
+                "--title",
+                "t",
+                "--no-default-reviewers",
+                "--draft",
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let rows = value.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        for (row, target) in rows.iter().zip(["main", "release/1"]) {
+            assert_eq!(row["id"], 26);
+            assert_eq!(row["target"], target);
+            assert_eq!(row["url"], url);
+            if draft {
+                assert_eq!(row["draft"], true);
+            } else {
+                assert!(row.get("draft").is_none());
+            }
+        }
+    }
 }
 
 /// A target of only separators leaves no branch to target.

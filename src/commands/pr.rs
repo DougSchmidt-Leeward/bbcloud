@@ -431,6 +431,8 @@ pub async fn create(ctx: &Ctx, args: CreateArgs) -> Result<()> {
         id: u64,
         target: String,
         url: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        draft: Option<bool>,
     }
 
     let mut created = Vec::new();
@@ -483,6 +485,7 @@ pub async fn create(ctx: &Ctx, args: CreateArgs) -> Result<()> {
             id: pr.id,
             target,
             url,
+            draft: pr.draft.then_some(true),
         });
     }
 
